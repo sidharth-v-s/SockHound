@@ -131,4 +131,6 @@ The TUI's export dialog uses the same `WriteFile` path and requires a second Ent
 
 The root model owns the snapshot, current tab, filters, table state and overlays (detail, help, export). `View` computes a header, status line, body and footer within the terminal size. Wide terminals show a table plus selected-item panel; narrow terminals show only the table. Below 80×24 the view is replaced with a resize hint.
 
+Manual refresh (`r`) and optional automatic refresh share the same scan path. The interval is configured with `--refresh-interval` or `refresh_interval` in config and must be at least one second. The timer is a single command chain: each tick schedules the next, and a tick that arrives while a scan is already running is skipped rather than queued. Automatic refresh pauses while the export dialog is open. The status line shows the active interval as `auto: 5s`.
+
 The Bubbles table requires columns before rows. Row rebuilds are therefore deferred until the first sized render, and tab switches clear stale rows before new columns are installed.

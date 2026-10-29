@@ -357,6 +357,35 @@ func TestExportEmptyPath(t *testing.T) {
 	}
 }
 
+func TestAutoRefresh(t *testing.T) {
+	s := testSnapshot()
+	m := New(Options{
+		Version:         "test",
+		RefreshInterval: time.Second,
+		Scan: func(context.Context) (model.Snapshot, error) {
+			return s, nil
+		},
+	})
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 35})
+	cmd := send(m, autoRefreshMsg{})
+	if !m.loading {
+		t.Fatalf("auto refresh did not start a scan")
+	}
+	if cmd == nil {
+		t.Fatalf("auto refresh returned no command")
+	}
+	if m.cancel != nil {
+		m.cancel()
+	}
+}
+
+func TestAutoRefreshDisabled(t *testing.T) {
+	m := newTestModel(t)
+	if cmd := send(m, autoRefreshMsg{}); cmd != nil || m.loading {
+		t.Errorf("auto refresh ran while disabled: cmd=%v loading=%v", cmd != nil, m.loading)
+	}
+}
+
 func TestRefresh(t *testing.T) {
 	s := testSnapshot()
 	calls := 0

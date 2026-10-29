@@ -25,6 +25,7 @@ This repository implements the v1 MVP described in [`SOCKHOUND_SPEC.md`](SOCKHOU
 - Composable, ANDed filters shared by the TUI and CLI.
 - Six evidence-backed rules: wildcard listener, review-listed port, unresolved owner, unavailable Unix metadata, partial process visibility and unknown TCP state.
 - Versioned JSON export to stdout or a file, with overwrite protection.
+- Optional automatic refresh at a configurable interval, with overlap protection.
 - Responsive TUI with an explicit fallback below 80×24.
 - No root requirement; no packet capture, remote scanning or state changes.
 
@@ -68,6 +69,9 @@ go build -trimpath -ldflags="-s -w -X github.com/zoro/sockhound/internal/version
 ```bash
 # Interactive TUI
 ./bin/sockhound
+
+# TUI with automatic refresh every 5 seconds
+./bin/sockhound --refresh-interval 5s
 
 # One-shot text summary
 ./bin/sockhound scan
@@ -125,6 +129,8 @@ On Findings, `f` cycles `HIGH → MEDIUM → LOW → INFO → all`. On socket ta
 
 The export dialog asks for a path. If the file already exists, the first Enter shows a confirmation message and the second Enter overwrites it. `Esc` cancels.
 
+Automatic refresh is off by default. Enable it with `--refresh-interval 5s` or `"refresh_interval": "5s"` in config. The status line shows `auto: 5s` while it is enabled. SockHound never runs overlapping scans: if a scan is still running when the next interval elapses, that tick is skipped. Automatic refresh pauses while the export dialog is open.
+
 The layout adapts to terminal size. Below 80×24 the TUI shows a resize hint instead of a broken layout.
 
 ## CLI reference
@@ -136,6 +142,17 @@ sockhound scan [flags]    One-shot scan, text or JSON
 sockhound version         Print the version
 sockhound help            Show general help
 ```
+
+### `tui` flags
+
+| Flag | Meaning |
+| --- | --- |
+| `--config PATH` | Load a JSON rules/configuration file |
+| `--refresh-interval DUR` | Automatic refresh interval, for example `5s`; `0s` disables |
+| `--no-color` | Disable colors |
+| `--debug` | Write diagnostics to stderr |
+| `--proc-root PATH` | Alternate procfs mount point (advanced/testing) |
+| `--no-owner-resolution` | Skip the `/proc/PID/fd` ownership pass |
 
 ### `scan` flags
 
@@ -207,6 +224,7 @@ Configuration is optional JSON loaded with `--config PATH`. Unknown fields are r
   "schema_version": 1,
   "review_ports": [22, 2375, 8080],
   "reveal_cmdline": false,
+  "refresh_interval": "10s",
   "rules": {
     "SH-WILD-001": { "enabled": true, "severity": "INFO" },
     "SH-PORT-001": { "enabled": true, "severity": "LOW" },
@@ -217,6 +235,7 @@ Configuration is optional JSON loaded with `--config PATH`. Unknown fields are r
 
 - `review_ports` drives `SH-PORT-001` for TCP listeners and bound UDP sockets. The list is local configuration, not a vulnerability database.
 - `reveal_cmdline` defaults to `false`. When false, arguments after `argv[0]` are replaced with `[N args hidden]`. When true, full command lines may contain sensitive values.
+- `refresh_interval` enables automatic TUI refresh using a Go duration such as `"5s"`, `"30s"` or `"1m"`. The minimum is `1s`; omit it, use `"0s"`, or pass `--refresh-interval 0s` to disable. The CLI flag overrides the config value.
 - `rules.<ID>.enabled` disables a rule.
 - `rules.<ID>.severity` overrides a rule's severity. Overrides are recorded in the finding (`severity_overridden`) and called out in its limitations.
 - `schema_version` defaults to `1` when omitted; other values are rejected.
@@ -319,7 +338,7 @@ Rendering and export handle sensitive metadata as follows:
 
 - v1 is Linux/procfs only; no eBPF or kernel modules.
 - No packet capture, payload inspection, latency/throughput measurement or remote scanning.
-- No automatic refresh interval; press `r` in the TUI.
+- Automatic refresh is opt-in; the default is manual refresh with `r`.
 - Findings are heuristics, not a vulnerability verdict.
 - Process ownership is best-effort and subject to the permissions described above.
 - The snapshot is a point-in-time view; sockets and owners can change immediately after collection.
@@ -335,7 +354,7 @@ make build    # bin/sockhound
 make release  # dist/sockhound (trimpath, stripped)
 ```
 
-Tests use fixtures under `testdata/` and do not require root. Parser tests cover IPv4/IPv6 decoding, TCP/UDP states, Unix paths with spaces and malformed records; resolver tests cover redaction, unreadable processes and file-descriptor races; TUI tests cover tabs, filtering, sorting, details, resizing, export and refresh.
+Tests use fixtures under `testdata/` and do not require root. Parser tests cover IPv4/IPv6 decoding, TCP/UDP states, Unix paths with spaces and malformed records; resolver tests cover redaction, unreadable processes and file-descriptor races; TUI tests cover tabs, filtering, sorting, details, resizing, export, refresh and auto-refresh scheduling.
 
 ### Project layout
 

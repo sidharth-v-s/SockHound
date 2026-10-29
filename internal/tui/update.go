@@ -36,12 +36,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.snap = &snap
 		m.scanErr = ""
 		m.rebuild()
-		if m.detailOpen {
-			m.detailScroll = 0
-		}
 		m.setStatus("Snapshot %s | %d sockets | %d findings",
 			snap.CollectedAt.Format("15:04:05"), len(snap.Sockets), len(snap.Findings))
 		return m, nil
+
+	case autoRefreshMsg:
+		if m.refreshInterval <= 0 {
+			return m, nil
+		}
+		next := m.autoRefreshTick()
+		// Never overlap scans. A slow scan simply causes the next tick to be
+		// skipped; the timer chain continues.
+		if m.loading || m.exportOpen {
+			return m, next
+		}
+		cmd := m.refresh()
+		if cmd == nil {
+			return m, next
+		}
+		return m, tea.Batch(cmd, next)
 
 	case spinner.TickMsg:
 		if !m.loading {

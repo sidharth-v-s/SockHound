@@ -6,9 +6,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/zoro/sockhound/internal/model"
 )
+
+// MinRefreshInterval is the smallest automatic TUI refresh interval. Shorter
+// values would rescan procfs too aggressively.
+const MinRefreshInterval = time.Second
 
 // RuleSettings overrides one rule.
 type RuleSettings struct {
@@ -18,10 +24,11 @@ type RuleSettings struct {
 
 // Config is the on-disk configuration format.
 type Config struct {
-	SchemaVersion int                     `json:"schema_version"`
-	ReviewPorts   []int                   `json:"review_ports"`
-	RevealCmdline bool                    `json:"reveal_cmdline"`
-	Rules         map[string]RuleSettings `json:"rules,omitempty"`
+	SchemaVersion   int                     `json:"schema_version"`
+	ReviewPorts     []int                   `json:"review_ports"`
+	RevealCmdline   bool                    `json:"reveal_cmdline"`
+	RefreshInterval string                  `json:"refresh_interval,omitempty"`
+	Rules           map[string]RuleSettings `json:"rules,omitempty"`
 }
 
 // Default returns the built-in configuration.
@@ -31,6 +38,33 @@ func Default() Config {
 		ReviewPorts:   []int{},
 		Rules:         map[string]RuleSettings{},
 	}
+}
+
+// ParseRefreshInterval parses a duration such as "5s" or "1m". An empty
+// value, "0", "0s" or "off" disables automatic refresh.
+func ParseRefreshInterval(raw string) (time.Duration, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "0" || strings.EqualFold(raw, "off") {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid refresh_interval %q: %w", raw, err)
+	}
+	if d < 0 {
+		return 0, fmt.Errorf("refresh_interval must not be negative")
+	}
+	if d > 0 && d < MinRefreshInterval {
+		return 0, fmt.Errorf("refresh_interval must be at least %s, or 0s to disable", MinRefreshInterval)
+	}
+	return d, nil
+}
+
+// RefreshEvery returns the configured automatic refresh interval, or zero when
+// automatic refresh is disabled. Load validates the value.
+func (c Config) RefreshEvery() time.Duration {
+	d, _ := ParseRefreshInterval(c.RefreshInterval)
+	return d
 }
 
 // Load reads a JSON configuration file. An empty path returns Default.
@@ -61,6 +95,9 @@ func Load(path string) (Config, error) {
 		if port < 1 || port > 65535 {
 			return cfg, fmt.Errorf("review port %d is outside 1-65535", port)
 		}
+	}
+	if _, err := ParseRefreshInterval(cfg.RefreshInterval); err != nil {
+		return cfg, err
 	}
 	for id, rule := range cfg.Rules {
 		if rule.Severity != "" {

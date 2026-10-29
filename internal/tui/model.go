@@ -34,14 +34,19 @@ type Options struct {
 	Scan func(context.Context) (model.Snapshot, error)
 	// Initial is an optional pre-collected snapshot (tests, alternate modes).
 	Initial *model.Snapshot
-	Version string
-	NoColor bool
+	// RefreshInterval enables automatic rescans in the TUI. Zero disables it.
+	RefreshInterval time.Duration
+	Version         string
+	NoColor         bool
 }
 
 type scanDoneMsg struct {
 	snapshot model.Snapshot
 	err      error
 }
+
+// autoRefreshMsg fires when the configured refresh interval elapses.
+type autoRefreshMsg struct{}
 
 type sortMode struct {
 	key   string
@@ -106,6 +111,8 @@ type Model struct {
 	statusOK bool
 	cancel   context.CancelFunc
 
+	refreshInterval time.Duration
+
 	table       table.Model
 	spinner     spinner.Model
 	filterInput textinput.Model
@@ -161,33 +168,53 @@ func New(opts Options) *Model {
 	})
 
 	m := &Model{
-		opts:           opts,
-		keys:           defaultKeyMap(),
-		st:             st,
-		tab:            TabDashboard,
-		prevTab:        TabDashboard,
-		table:          tb,
-		spinner:        sp,
-		filterInput:    fi,
-		exportInput:    ei,
-		sortIdx:        map[Tab]int{},
-		severityFilter: "",
-		statusOK:       true,
+		opts:            opts,
+		keys:            defaultKeyMap(),
+		st:              st,
+		tab:             TabDashboard,
+		prevTab:         TabDashboard,
+		table:           tb,
+		spinner:         sp,
+		filterInput:     fi,
+		exportInput:     ei,
+		sortIdx:         map[Tab]int{},
+		severityFilter:  "",
+		statusOK:        true,
+		refreshInterval: opts.RefreshInterval,
 	}
 	return m
 }
 
-// Init starts the first scan (unless an initial snapshot was supplied).
+// Init starts the first scan (unless an initial snapshot was supplied) and the
+// automatic refresh timer when configured.
 func (m *Model) Init() tea.Cmd {
-	if m.opts.Initial != nil {
+	var cmds []tea.Cmd
+	switch {
+	case m.opts.Initial != nil:
 		m.setSnapshot(*m.opts.Initial)
-		return nil
-	}
-	if m.opts.Scan == nil {
+	case m.opts.Scan == nil:
 		m.scanErr = "no scan function configured"
+	default:
+		cmds = append(cmds, m.spinner.Tick, m.startScan())
+	}
+	if m.opts.Scan != nil {
+		if cmd := m.autoRefreshTick(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	if len(cmds) == 0 {
 		return nil
 	}
-	return tea.Batch(m.spinner.Tick, m.startScan())
+	return tea.Batch(cmds...)
+}
+
+func (m *Model) autoRefreshTick() tea.Cmd {
+	if m.refreshInterval <= 0 {
+		return nil
+	}
+	return tea.Tick(m.refreshInterval, func(time.Time) tea.Msg {
+		return autoRefreshMsg{}
+	})
 }
 
 func (m *Model) startScan() tea.Cmd {

@@ -257,6 +257,11 @@ func (m *Model) helpLines() []string {
 	addSection("ACTIONS")
 	addKey("r", "Refresh the snapshot")
 	addKey("e", "Export the current snapshot as JSON")
+	if m.refreshInterval > 0 {
+		lines = append(lines, m.st.dim.Render("  Auto-refresh every "+m.refreshInterval.String()))
+	} else {
+		lines = append(lines, m.st.dim.Render("  Auto-refresh disabled; set --refresh-interval or refresh_interval"))
+	}
 	addSection("DATA NOTES")
 	lines = append(lines, m.st.dim.Render("  • The snapshot covers the current network namespace, not every container namespace."))
 	lines = append(lines, m.st.dim.Render("  • Root is not required. Inaccessible owners stay visible as unknown."))

@@ -60,7 +60,7 @@ func Run(args []string, ios IO) int {
 			fmt.Fprintln(ios.Err, "Use `sockhound scan` for a one-shot summary or `sockhound scan --json` for machine-readable output.")
 			return ExitUsage
 		}
-		return runTUI("", false, false, "", ios)
+		return runTUI("", false, false, "", "", ios)
 	}
 
 	switch args[0] {
@@ -127,6 +127,7 @@ func runTUIArgs(args []string, ios IO) int {
 	debug := fs.Bool("debug", false, "write diagnostics to stderr")
 	procRoot := fs.String("proc-root", "/proc", "procfs mount point (advanced/testing)")
 	noOwners := fs.Bool("no-owner-resolution", false, "skip process ownership resolution")
+	refreshInterval := fs.String("refresh-interval", "", "automatic refresh interval, for example 5s; 0s disables")
 	if err := fs.Parse(args); err != nil {
 		return ExitUsage
 	}
@@ -138,14 +139,22 @@ func runTUIArgs(args []string, ios IO) int {
 		fmt.Fprintln(ios.Err, "sockhound tui: stdin/stdout are not a terminal; use `sockhound scan` instead.")
 		return ExitUsage
 	}
-	return runTUI(*configPath, *noColor, *debug, *procRoot, ios, *noOwners)
+	return runTUI(*configPath, *noColor, *debug, *procRoot, *refreshInterval, ios, *noOwners)
 }
 
-func runTUI(configPath string, noColor, debug bool, procRoot string, ios IO, noOwners ...bool) int {
+func runTUI(configPath string, noColor, debug bool, procRoot, refreshInterval string, ios IO, noOwners ...bool) int {
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		fmt.Fprintf(ios.Err, "sockhound: %v\n", err)
 		return ExitUsage
+	}
+	interval := cfg.RefreshEvery()
+	if refreshInterval != "" {
+		interval, err = config.ParseRefreshInterval(refreshInterval)
+		if err != nil {
+			fmt.Fprintf(ios.Err, "sockhound: %v\n", err)
+			return ExitUsage
+		}
 	}
 	if procRoot == "" {
 		procRoot = "/proc"
@@ -159,8 +168,9 @@ func runTUI(configPath string, noColor, debug bool, procRoot string, ios IO, noO
 		opts.ResolveOwners = false
 	}
 	runOpts := tui.Options{
-		Version: version.Version,
-		NoColor: noColor,
+		Version:         version.Version,
+		NoColor:         noColor,
+		RefreshInterval: interval,
 		Scan: func(ctx context.Context) (model.Snapshot, error) {
 			return ios.Scan(ctx, opts)
 		},
@@ -442,6 +452,7 @@ Flags:
   --debug                   Write diagnostics to stderr
   --proc-root PATH          procfs mount point (advanced/testing)
   --no-owner-resolution     Skip process ownership resolution
+  --refresh-interval DUR    Auto-refresh interval, for example 5s; 0s disables
 
 Keybindings: 1-5 tabs, / filter, s sort, r refresh, e export, ? help, q quit.
 `)

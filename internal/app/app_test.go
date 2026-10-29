@@ -141,6 +141,49 @@ func TestTUINonTerminal(t *testing.T) {
 	}
 }
 
+func TestTUIRefreshInterval(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"schema_version":1,"refresh_interval":"7s"}`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	ios, _, _ := testIO(nil)
+	ios.IsTerminal = func() bool { return true }
+	var got time.Duration
+	ios.RunTUI = func(opts tui.Options) error {
+		got = opts.RefreshInterval
+		return nil
+	}
+
+	if code := Run([]string{"tui", "--config", path}, ios); code != ExitOK {
+		t.Fatalf("config exit = %d", code)
+	}
+	if got != 7*time.Second {
+		t.Errorf("config interval = %s, want 7s", got)
+	}
+
+	if code := Run([]string{"tui", "--config", path, "--refresh-interval", "3s"}, ios); code != ExitOK {
+		t.Fatalf("override exit = %d", code)
+	}
+	if got != 3*time.Second {
+		t.Errorf("override interval = %s, want 3s", got)
+	}
+
+	if code := Run([]string{"tui", "--refresh-interval", "0s"}, ios); code != ExitOK {
+		t.Fatalf("disable exit = %d", code)
+	}
+	if got != 0 {
+		t.Errorf("disabled interval = %s, want 0", got)
+	}
+
+	ios.RunTUI = func(tui.Options) error {
+		t.Errorf("RunTUI should not be called for an invalid interval")
+		return nil
+	}
+	if code := Run([]string{"tui", "--refresh-interval", "soon"}, ios); code != ExitUsage {
+		t.Fatalf("invalid exit = %d, want %d", code, ExitUsage)
+	}
+}
+
 func TestScanText(t *testing.T) {
 	ios, out, _ := testIO(func(context.Context, scanner.Options) (model.Snapshot, error) {
 		return snap(false), nil

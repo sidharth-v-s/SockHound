@@ -119,6 +119,9 @@ func (m *Model) renderStatus() string {
 	if m.tab != TabHelp {
 		parts = append(parts, "sort: "+m.currentSort().label)
 	}
+	if m.refreshInterval > 0 {
+		parts = append(parts, "auto: "+m.refreshInterval.String())
+	}
 	if m.ownerFilter != 0 && (m.tab == TabDashboard || m.tab == TabSockets || m.tab == TabUnix) {
 		parts = append(parts, m.ownerFilterLabel())
 	}
